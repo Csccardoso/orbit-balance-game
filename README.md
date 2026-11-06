@@ -2,7 +2,7 @@
 
 A sleek, fast-paced minimalist mobile web game prototype.
 
-🎮 **Live Playable Link:** [Substitui pelo teu link da Vercel, ex: https://orbit-balance.vercel.app]
+🎮 **Live Playable Link:** https://orbit-balance-game.vercel.app/
 
 ---
 
