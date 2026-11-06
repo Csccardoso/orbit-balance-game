@@ -1,4 +1,4 @@
-# orbit-balance-game
+# Orbit Balance Game
 
 A sleek, fast-paced minimalist mobile web game prototype.
 
