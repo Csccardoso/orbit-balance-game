@@ -1,0 +1,521 @@
+<!doctype html>
+<html lang="pt">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, user-scalable=no"
+    />
+    <title>Orbit Balance</title>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+        user-select: none;
+        -webkit-user-select: none;
+        touch-action: manipulation;
+      }
+
+      body {
+        background-color: #0b0f19;
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        color: #f8fafc;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 100vh;
+        overflow: hidden;
+      }
+
+      #game-container {
+        position: relative;
+        width: 100vw;
+        max-width: 420px;
+        height: 100vh;
+        max-height: 800px;
+        background: radial-gradient(circle at center, #1e293b 0%, #0f172a 100%);
+        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+        display: flex;
+        flex-direction: column;
+      }
+
+      @media (min-width: 450px) {
+        #game-container {
+          border-radius: 24px;
+          border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+      }
+
+      /* Top Bar HUD */
+      #hud {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 24px 28px;
+        font-size: 15px;
+        font-weight: 600;
+        letter-spacing: 0.05em;
+        z-index: 5;
+      }
+
+      .hud-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        color: #94a3b8;
+      }
+
+      .hud-item span {
+        color: #f8fafc;
+        font-size: 18px;
+        font-weight: 700;
+      }
+
+      #lives-container {
+        display: flex;
+        gap: 4px;
+        color: #ef4444;
+        font-size: 16px;
+      }
+
+      /* Canvas */
+      canvas {
+        flex: 1;
+        width: 100%;
+        height: 100%;
+        display: block;
+        cursor: pointer;
+      }
+
+      /* Overlays (Start / Game Over) */
+      .overlay {
+        position: absolute;
+        inset: 0;
+        background: rgba(15, 23, 42, 0.88);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        text-align: center;
+        padding: 32px;
+        z-index: 10;
+        transition: opacity 0.3s ease;
+      }
+
+      .overlay.hidden {
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      h1 {
+        font-size: 32px;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        margin-bottom: 8px;
+        background: linear-gradient(135deg, #38bdf8, #818cf8);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+      }
+
+      p {
+        color: #94a3b8;
+        font-size: 14px;
+        line-height: 1.6;
+        margin-bottom: 32px;
+        max-width: 260px;
+      }
+
+      .score-summary {
+        font-size: 16px;
+        color: #cbd5e1;
+        margin-bottom: 24px;
+      }
+
+      .score-summary strong {
+        color: #38bdf8;
+        font-size: 22px;
+      }
+
+      button {
+        background: linear-gradient(135deg, #0ea5e9, #6366f1);
+        color: white;
+        border: none;
+        padding: 14px 36px;
+        font-size: 16px;
+        font-weight: 600;
+        border-radius: 9999px;
+        cursor: pointer;
+        box-shadow: 0 10px 25px -5px rgba(99, 102, 241, 0.4);
+        transition:
+          transform 0.15s ease,
+          box-shadow 0.15s ease;
+      }
+
+      button:active {
+        transform: scale(0.96);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="game-container">
+      <div id="hud">
+        <div class="hud-item">PONTOS: <span id="score-el">0</span></div>
+        <div class="hud-item">RECORDE: <span id="best-score-el">0</span></div>
+        <div id="lives-container">
+          <span class="heart">❤️</span>
+          <span class="heart">❤️</span>
+          <span class="heart">❤️</span>
+        </div>
+      </div>
+
+      <canvas id="gameCanvas"></canvas>
+
+      <!-- Start Screen -->
+      <div id="start-screen" class="overlay">
+        <h1>Orbit Balance</h1>
+        <p>
+          Toca para mudar de sentido.<br />Apanha as
+          <b style="color: #38bdf8">esferas azuis</b>.<br />Evita as
+          <b style="color: #ef4444">vermelhas</b>.
+        </p>
+        <button id="start-btn">Começar a Jogar</button>
+      </div>
+
+      <!-- Game Over Screen -->
+      <div id="game-over-screen" class="overlay hidden">
+        <h1
+          style="
+            background: linear-gradient(135deg, #ef4444, #f43f5e);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+          "
+        >
+          Fim de Jogo
+        </h1>
+        <div class="score-summary">
+          Pontuação Final: <strong id="final-score">0</strong>
+        </div>
+        <button id="restart-btn">Tentar Novamente</button>
+      </div>
+    </div>
+
+    <script>
+      // Audio Synthesizer (Web Audio API)
+      const AudioEngine = {
+        ctx: null,
+        init() {
+          if (!this.ctx) {
+            const AudioContext =
+              window.AudioContext || window.webkitAudioContext;
+            this.ctx = new AudioContext();
+          }
+          if (this.ctx.state === "suspended") {
+            this.ctx.resume();
+          }
+        },
+        playCollect() {
+          this.init();
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = "sine";
+          osc.frequency.setValueAtTime(587.33, this.ctx.currentTime); // D5
+          osc.frequency.exponentialRampToValueAtTime(
+            880,
+            this.ctx.currentTime + 0.12,
+          ); // A5
+          gain.gain.setValueAtTime(0.15, this.ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(
+            0.001,
+            this.ctx.currentTime + 0.15,
+          );
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start();
+          osc.stop(this.ctx.currentTime + 0.15);
+        },
+        playHit() {
+          this.init();
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = "triangle";
+          osc.frequency.setValueAtTime(140, this.ctx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(
+            40,
+            this.ctx.currentTime + 0.2,
+          );
+          gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(
+            0.001,
+            this.ctx.currentTime + 0.2,
+          );
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start();
+          osc.stop(this.ctx.currentTime + 0.2);
+        },
+      };
+
+      // Canvas Setup
+      const canvas = document.getElementById("gameCanvas");
+      const ctx = canvas.getContext("2d");
+      const container = document.getElementById("game-container");
+
+      function resizeCanvas() {
+        const rect = canvas.getBoundingClientRect();
+        canvas.width = rect.width;
+        canvas.height = rect.height;
+      }
+      window.addEventListener("resize", resizeCanvas);
+      resizeCanvas();
+
+      // Game State
+      let isPlaying = false;
+      let score = 0;
+      let bestScore = parseInt(localStorage.getItem("orbit_best_score")) || 0;
+      let lives = 3;
+      let orbitAngle = 0;
+      let orbitSpeed = 0.038;
+      let orbitDirection = 1; // 1 = clockwise, -1 = counter-clockwise
+      let enemies = [];
+      let particles = [];
+      let spawnTimer = 0;
+      let spawnInterval = 75;
+
+      // Elements
+      const scoreEl = document.getElementById("score-el");
+      const bestScoreEl = document.getElementById("best-score-el");
+      const finalScoreEl = document.getElementById("final-score");
+      const livesContainer = document.getElementById("lives-container");
+      const startScreen = document.getElementById("start-screen");
+      const gameOverScreen = document.getElementById("game-over-screen");
+      const startBtn = document.getElementById("start-btn");
+      const restartBtn = document.getElementById("restart-btn");
+
+      bestScoreEl.textContent = bestScore;
+
+      function updateLivesUI() {
+        livesContainer.innerHTML = "";
+        for (let i = 0; i < 3; i++) {
+          const heart = document.createElement("span");
+          heart.textContent = "❤️";
+          heart.style.opacity = i < lives ? "1" : "0.2";
+          livesContainer.appendChild(heart);
+        }
+      }
+
+      // Input Handlers
+      function toggleDirection() {
+        if (!isPlaying) return;
+        orbitDirection *= -1;
+      }
+
+      canvas.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        toggleDirection();
+      });
+
+      // Particle Burst Effect
+      function createParticles(x, y, color) {
+        for (let i = 0; i < 12; i++) {
+          const angle = Math.random() * Math.PI * 2;
+          const speed = Math.random() * 3 + 1;
+          particles.push({
+            x,
+            y,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed,
+            radius: Math.random() * 3 + 1.5,
+            color,
+            alpha: 1,
+          });
+        }
+      }
+
+      // Spawn Inward Orbs
+      function spawnOrb() {
+        const centerX = canvas.width / 2;
+        const centerY = canvas.height / 2;
+        const spawnRadius = Math.max(canvas.width, canvas.height) * 0.65;
+        const angle = Math.random() * Math.PI * 2;
+
+        const isBonus = Math.random() < 0.55;
+        enemies.push({
+          x: centerX + Math.cos(angle) * spawnRadius,
+          y: centerY + Math.sin(angle) * spawnRadius,
+          radius: isBonus ? 9 : 8,
+          speed: 1.6 + Math.min(score * 0.04, 2.5),
+          isBonus,
+          color: isBonus ? "#38bdf8" : "#ef4444",
+        });
+      }
+
+      // Game Loop
+      function update() {
+        if (!isPlaying) return;
+
+        const centerX = canvas.width / 2;
+        const centerY = canvas.height / 2;
+        const ringRadius = Math.min(canvas.width, canvas.height) * 0.28;
+
+        // Update Player
+        orbitAngle += orbitSpeed * orbitDirection;
+        const playerX = centerX + Math.cos(orbitAngle) * ringRadius;
+        const playerY = centerY + Math.sin(orbitAngle) * ringRadius;
+        const playerRadius = 11;
+
+        // Spawner
+        spawnTimer++;
+        if (spawnTimer >= spawnInterval) {
+          spawnOrb();
+          spawnTimer = 0;
+          spawnInterval = Math.max(45, 75 - Math.floor(score / 3));
+        }
+
+        // Update Orbs
+        for (let i = enemies.length - 1; i >= 0; i--) {
+          const orb = enemies[i];
+          const dirX = centerX - orb.x;
+          const dirY = centerY - orb.y;
+          const distToCenter = Math.hypot(dirX, dirY);
+
+          if (distToCenter > 1) {
+            orb.x += (dirX / distToCenter) * orb.speed;
+            orb.y += (dirY / distToCenter) * orb.speed;
+          }
+
+          // Collision with Player
+          const distToPlayer = Math.hypot(playerX - orb.x, playerY - orb.y);
+          if (distToPlayer < playerRadius + orb.radius) {
+            if (orb.isBonus) {
+              score++;
+              scoreEl.textContent = score;
+              AudioEngine.playCollect();
+              createParticles(orb.x, orb.y, "#38bdf8");
+            } else {
+              lives--;
+              updateLivesUI();
+              AudioEngine.playHit();
+              createParticles(orb.x, orb.y, "#ef4444");
+              if (lives <= 0) {
+                endGame();
+                return;
+              }
+            }
+            enemies.splice(i, 1);
+            continue;
+          }
+
+          // Reached Center (disappear without consequence)
+          if (distToCenter < 12) {
+            enemies.splice(i, 1);
+          }
+        }
+
+        // Update Particles
+        for (let i = particles.length - 1; i >= 0; i--) {
+          const p = particles[i];
+          p.x += p.vx;
+          p.y += p.vy;
+          p.alpha -= 0.035;
+          if (p.alpha <= 0) particles.splice(i, 1);
+        }
+      }
+
+      function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        const centerX = canvas.width / 2;
+        const centerY = canvas.height / 2;
+        const ringRadius = Math.min(canvas.width, canvas.height) * 0.28;
+
+        // Draw Orbit Ring
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, ringRadius, 0, Math.PI * 2);
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.07)";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // Draw Particles
+        particles.forEach((p) => {
+          ctx.save();
+          ctx.globalAlpha = p.alpha;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+          ctx.fillStyle = p.color;
+          ctx.fill();
+          ctx.restore();
+        });
+
+        // Draw Orbs
+        enemies.forEach((orb) => {
+          ctx.save();
+          ctx.shadowBlur = 10;
+          ctx.shadowColor = orb.color;
+          ctx.beginPath();
+          ctx.arc(orb.x, orb.y, orb.radius, 0, Math.PI * 2);
+          ctx.fillStyle = orb.color;
+          ctx.fill();
+          ctx.restore();
+        });
+
+        // Draw Player
+        if (isPlaying) {
+          const playerX = centerX + Math.cos(orbitAngle) * ringRadius;
+          const playerY = centerY + Math.sin(orbitAngle) * ringRadius;
+
+          ctx.save();
+          ctx.shadowBlur = 14;
+          ctx.shadowColor = "#38bdf8";
+          ctx.beginPath();
+          ctx.arc(playerX, playerY, 10, 0, Math.PI * 2);
+          ctx.fillStyle = "#ffffff";
+          ctx.fill();
+          ctx.restore();
+        }
+
+        requestAnimationFrame(() => {
+          update();
+          draw();
+        });
+      }
+
+      function startGame() {
+        AudioEngine.init();
+        resizeCanvas();
+        score = 0;
+        lives = 3;
+        enemies = [];
+        particles = [];
+        spawnTimer = 0;
+        orbitAngle = 0;
+        scoreEl.textContent = "0";
+        updateLivesUI();
+
+        startScreen.classList.add("hidden");
+        gameOverScreen.classList.add("hidden");
+        isPlaying = true;
+      }
+
+      function endGame() {
+        isPlaying = false;
+        if (score > bestScore) {
+          bestScore = score;
+          localStorage.setItem("orbit_best_score", bestScore);
+          bestScoreEl.textContent = bestScore;
+        }
+        finalScoreEl.textContent = score;
+        gameOverScreen.classList.remove("hidden");
+      }
+
+      startBtn.addEventListener("click", startGame);
+      restartBtn.addEventListener("click", startGame);
+
+      // Initial render loop
+      draw();
+    </script>
+  </body>
+</html>
